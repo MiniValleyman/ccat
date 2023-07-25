@@ -1,4 +1,4 @@
-#!/bin/bash -e
+#!/data/data/com.termux/files/usr/bin/bash -e
 
 version() {
   ver="$(git describe --tags HEAD 2>/dev/null || true)"

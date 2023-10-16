@@ -1,3 +1,3 @@
 #!/data/data/com.termux/files/usr/bin/bash -e
 
-CGO_ENABLED=1 go build -mod=vendor -v -x -o bin/ccat
+CGO_ENABLED=1 GOOS=linux GOARCH=arm GOARM=5 go build -mod=vendor -v -x -o bin/ccat

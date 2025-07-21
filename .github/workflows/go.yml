@@ -1,78 +1,105 @@
-name: Go
+name: Build and Release ccat
 
 on:
   workflow_dispatch:
     inputs:
       target:
-        description: 'Build target (server, tablet, redmi)'
+        description: 'Build target'
         required: true
-        default: 'server'
+        default: 'redmi'
         type: choice
         options:
           - server
           - tablet
-          - redmi                                                                               
-  push:
-    branches: [ "master" ]
-    tags:
-      - v*
-  pull_request:
-    branches: [ "master" ]
-    tags:
-      - v*
+          - redmi
+          - all
+      tag:
+        description: 'Release tag (e.g., v1.2.3)'
+        required: true
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
+
+    strategy:
+      matrix:
+        include:
+          - name: server
+            goos: linux
+            goarch: arm
+            goarm: '5'
+            ext: ''
+          - name: tablet
+            goos: android
+            goarch: arm
+            goarm: '7'
+            ext: ''
+          - name: redmi
+            goos: android
+            goarch: arm64
+            goarm: ''
+            ext: ''
+
+    if: |
+      github.event.inputs.target == matrix.name ||
+      github.event.inputs.target == 'all'
+
+    name: Build for ${{ matrix.name }}
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout source
+        uses: actions/checkout@v4
 
       - name: Set up Go
-        uses: actions/setup-go@v4
+        uses: actions/setup-go@v5
         with:
-          go-version: '1.20'
+          go-version: '1.22'
 
-      - name: Set build variables
-        id: vars
+      - name: Build ccat
         run: |
-          if [[ "${{ github.event.inputs.target }}" == "tablet" ]]; then
-            echo "GOOS=android" >> $GITHUB_ENV
-            echo "GOARCH=arm" >> $GITHUB_ENV
-            echo "GOARM=7" >> $GITHUB_ENV
-            echo "SUFFIX=tablet" >> $GITHUB_ENV
-          elif [[ "${{ github.event.inputs.target }}" == "redmi" ]]; then
-            echo "GOOS=android" >> $GITHUB_ENV
-            echo "GOARCH=arm64" >> $GITHUB_ENV
-            echo "SUFFIX=redmi" >> $GITHUB_ENV
-          else
-            echo "GOOS=linux" >> $GITHUB_ENV
-            echo "GOARCH=arm" >> $GITHUB_ENV
-            echo "GOARM=5" >> $GITHUB_ENV
-            echo "SUFFIX=server" >> $GITHUB_ENV
+          # Set GO env
+          export GOOS=${{ matrix.goos }}
+          export GOARCH=${{ matrix.goarch }}
+          export GOARM=${{ matrix.goarm }}
+
+          # Enable softfloat for server build
+          if [ "${{ matrix.name }}" = "server" ]; then
+            export CGO_ENABLED=0
+            export GOMIPS=softfloat
           fi
 
-      - name: Compile
-        run: |
-          mkdir -p dist
-          if [[ -n "${GOARM}" ]]; then
-            GOOS="${GOOS}" GOARCH="${GOARCH}" GOARM="${GOARM}" \
-            go build -v -x -ldflags="-X main.name=ccat -X main.version=$(git describe --abbrev=0 --tags) -X main.commit=$(git rev-parse --short HEAD)" \
-              -o dist/ccat-${SUFFIX}
-          else
-            GOOS="${GOOS}" GOARCH="${GOARCH}" \
-              go build -v -x -ldflags="-X main.name=ccat -X main.version=$(git describe --abbrev=0 --tags) -X main.commit=$(git rev-parse --short HEAD)" \
-              -o dist/ccat-${SUFFIX}
-          fi
+          # Create output dir
+          mkdir -p out/
 
-      - name: Release
-        if: startsWith(github.ref, 'refs/tags/')
+          # Build binary
+          go build -v -o out/ccat-${{ matrix.name }}${{ matrix.ext }} ./cmd/ccat
+
+      - name: Upload build
+        uses: actions/upload-artifact@v4
+        with:
+          name: ccat-${{ matrix.name }}
+          path: out/ccat-${{ matrix.name }}
+
+  release:
+    runs-on: ubuntu-latest
+    needs: build
+    if: always()
+
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Display artifacts
+        run: ls -R artifacts
+
+      - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.ref_name }}
-          files: dist/*
-          name: Release ${{ github.ref_name }}
-          body: |
-            Released by: ${{ github.actor }}
+          tag_name: ${{ github.event.inputs.tag }}
+          name: ccat ${{ github.event.inputs.tag }}
+          files: |
+            artifacts/ccat-*/ccat-*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

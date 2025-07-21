@@ -10,7 +10,8 @@ on:
         type: choice
         options:
           - server
-          - tablet                                                                                        - redmi                                                                               
+          - tablet
+          - redmi                                                                               
   push:
     branches: [ "master" ]
     tags:
@@ -34,7 +35,8 @@ jobs:
         with:
           go-version: '1.20'
 
-      - name: Set build variables                                                                       id: vars
+      - name: Set build variables
+        id: vars
         run: |
           if [[ "${{ github.event.inputs.target }}" == "tablet" ]]; then
             echo "GOOS=android" >> $GITHUB_ENV
@@ -56,7 +58,8 @@ jobs:
         run: |
           mkdir -p dist
           if [[ -n "${GOARM}" ]]; then
-            GOOS="${GOOS}" GOARCH="${GOARCH}" GOARM="${GOARM}" \                                              go build -v -x -ldflags="-X main.name=ccat -X main.version=$(git describe --abbrev=0 --tags) -X main.commit=$(git rev-parse --short HEAD)" \
+            GOOS="${GOOS}" GOARCH="${GOARCH}" GOARM="${GOARM}" \
+            go build -v -x -ldflags="-X main.name=ccat -X main.version=$(git describe --abbrev=0 --tags) -X main.commit=$(git rev-parse --short HEAD)" \
               -o dist/ccat-${SUFFIX}
           else
             GOOS="${GOOS}" GOARCH="${GOARCH}" \

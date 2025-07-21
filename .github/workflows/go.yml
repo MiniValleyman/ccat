@@ -58,7 +58,7 @@ jobs:
               export GOMIPS=softfloat
             fi
 
-            go build -v -o "dist/ccat-$name" ./cmd/ccat
+            go build -v -o "dist/ccat-$name" ./
           }
 
           TARGET="${{ github.event.inputs.target }}"

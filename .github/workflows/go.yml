@@ -4,50 +4,19 @@ on:
   workflow_dispatch:
     inputs:
       target:
-        description: 'Build target'
+        description: 'Build target (server, tablet, redmi, all)'
         required: true
         default: 'redmi'
-        type: choice
-        options:
-          - server
-          - tablet
-          - redmi
-          - all
       tag:
-        description: 'Release tag (e.g., v1.2.3)'
+        description: 'GitHub release tag (e.g. v1.0.0)'
         required: true
 
 jobs:
   build:
     runs-on: ubuntu-latest
 
-    strategy:
-      matrix:
-        include:
-          - name: server
-            goos: linux
-            goarch: arm
-            goarm: '5'
-            ext: ''
-          - name: tablet
-            goos: android
-            goarch: arm
-            goarm: '7'
-            ext: ''
-          - name: redmi
-            goos: android
-            goarch: arm64
-            goarm: ''
-            ext: ''
-
-    if: |
-      github.event.inputs.target == matrix.name ||
-      github.event.inputs.target == 'all'
-
-    name: Build for ${{ matrix.name }}
-
     steps:
-      - name: Checkout source
+      - name: Checkout code
         uses: actions/checkout@v4
 
       - name: Set up Go
@@ -55,51 +24,68 @@ jobs:
         with:
           go-version: '1.22'
 
-      - name: Build ccat
+      - name: Build binaries
         run: |
-          # Set GO env
-          export GOOS=${{ matrix.goos }}
-          export GOARCH=${{ matrix.goarch }}
-          export GOARM=${{ matrix.goarm }}
+          #!/bin/bash
+          set -ex
 
-          # Enable softfloat for server build
-          if [ "${{ matrix.name }}" = "server" ]; then
-            export CGO_ENABLED=0
-            export GOMIPS=softfloat
-          fi
-
-          # Create output dir
           mkdir -p out/
 
-          # Build binary
-          go build -v -o out/ccat-${{ matrix.name }}${{ matrix.ext }} ./cmd/ccat
+          build_ccat() {
+            local name="$1"
+            local goos="$2"
+            local goarch="$3"
+            local goarm="$4"
 
-      - name: Upload build
+            echo "Building for $name"
+
+            export GOOS="$goos"
+            export GOARCH="$goarch"
+            export GOARM="$goarm"
+
+            # Special case for server (softfloat, no cgo)
+            if [[ "$name" == "server" ]]; then
+              export CGO_ENABLED=0
+              export GOMIPS=softfloat
+            fi
+
+            go build -v -o "out/ccat-${name}" ./cmd/ccat
+          }
+
+          TARGET="${{ github.event.inputs.target }}"
+
+          if [[ "$TARGET" == "all" || "$TARGET" == "server" ]]; then
+            build_ccat server linux arm 5
+          fi
+          if [[ "$TARGET" == "all" || "$TARGET" == "tablet" ]]; then
+            build_ccat tablet android arm 7
+          fi
+          if [[ "$TARGET" == "all" || "$TARGET" == "redmi" ]]; then
+            build_ccat redmi android arm64 ""
+          fi
+
+      - name: Upload binaries
         uses: actions/upload-artifact@v4
         with:
-          name: ccat-${{ matrix.name }}
-          path: out/ccat-${{ matrix.name }}
+          name: ccat-binaries
+          path: out/*
 
   release:
     runs-on: ubuntu-latest
     needs: build
-    if: always()
 
     steps:
-      - name: Download all artifacts
+      - name: Download artifacts
         uses: actions/download-artifact@v4
         with:
-          path: artifacts
-
-      - name: Display artifacts
-        run: ls -R artifacts
+          name: ccat-binaries
+          path: release/
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.event.inputs.tag }}
           name: ccat ${{ github.event.inputs.tag }}
-          files: |
-            artifacts/ccat-*/ccat-*
+          files: release/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

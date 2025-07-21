@@ -58,6 +58,14 @@ jobs:
               export GOMIPS=softfloat
             fi
 
+            if [ "$name" = tablet" ]; then
+              export CGO_ENABLED=1
+            fi
+
+            if [ "$name" = redmi" ]; then
+              export CGO_ENABLED=1
+            fi
+
             go build -v -o "dist/ccat-$name"
           }
 
